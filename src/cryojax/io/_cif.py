@@ -1,4 +1,4 @@
-from .load_atoms import clean_gemmi_structure
+from ._gemmi import clean_gemmi_structure
 
 
 __all__ = [

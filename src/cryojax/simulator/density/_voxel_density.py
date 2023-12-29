@@ -22,13 +22,14 @@ from ...io import (
     read_atomic_model_from_pdb,
     read_atomic_model_from_cif,
     get_scattering_info_from_gemmi_model,
+    get_scattering_info_from_mdtraj,
 )
 from ...core import field
 from cryojax.utils import (
     make_frequencies,
     make_coordinates,
     flatten_and_coordinatize,
-    rfftn,
+    fftn,
 )
 from cryojax.typing import (
     ComplexVolume,
@@ -161,14 +162,27 @@ class VoxelGrid(Voxels):
         model,
         n_voxels_per_side: Tuple[int, int, int],
         voxel_size: float = 1.0,
-        real: bool = False,
         **kwargs: Any,
     ) -> "VoxelGrid":
         """
         Loads a PDB file as a VoxelCloud.  Uses the Gemmi library.
-        Heavily based on a code from Frederic Poitevin, located at
+        Much of the code was adapted from code from Frederic Poitevin,
 
         https://github.com/compSPI/ioSPI/blob/master/ioSPI/atomic_models.py
+
+        Parameters
+        ----------
+        model : Gemmi model
+            Gemmi model containing the atomic structure.
+        n_voxels_per_side : tuple of ints
+            The number of voxels in each dimension.
+        voxel_size : float
+            The size of each voxel.
+
+        Returns
+        -------
+        voxel_grid : VoxelGrid
+            The voxel grid density representation.
         """
         coords, a_vals, b_vals = get_scattering_info_from_gemmi_model(model)
 
@@ -177,7 +191,7 @@ class VoxelGrid(Voxels):
             coords, a_vals, b_vals, coordinates_3d
         )
 
-        fourier_space_density = rfftn(density)
+        fourier_space_density = fftn(density)
         frequency_grid = make_frequencies(
             fourier_space_density.shape, voxel_size
         )
@@ -190,6 +204,56 @@ class VoxelGrid(Voxels):
             "weights": fourier_space_density,
             "coordinates": z_plane_frequencies,
             "voxel_size": voxel_size,
+        }
+        return cls(**vdict, **kwargs)
+
+    @classmethod
+    def from_mdtraj(
+        cls: Type["VoxelGrid"],
+        traj,
+        n_voxels_per_side: Tuple[int, int, int],
+        voxel_size: float = 1.0,
+        **kwargs: Any,
+    ) -> "VoxelGrid":
+        """
+        Loads an mdtraj trajectory as a VoxelGrid.
+
+        Parameters
+        ----------
+        traj : mdtraj trajectory
+            The trajectory object to load.
+        n_voxels_per_side : tuple of ints
+            The number of voxels in each dimension.
+        voxel_size : float
+            The size of each voxel.
+
+        Returns
+        -------
+        voxel_grid : VoxelGrid
+            The voxel grid density representation.
+        """
+        atom_positions, a_vals, b_vals = get_scattering_info_from_mdtraj(traj)
+        coordinates_3d = make_coordinates(n_voxels_per_side, voxel_size)
+
+        def _build_density_and_take_fftn(conformation):
+            density = _build_real_space_voxels_from_atoms(
+                conformation, a_vals, b_vals, coordinates_3d
+            )
+            return fftn(density)
+
+        all_densities = jax.vmap(_build_density_and_take_fftn)(atom_positions)
+
+        frequency_grid = make_frequencies(all_densities[0].shape, voxel_size)
+
+        z_plane_frequencies = jnp.expand_dims(
+            frequency_grid[:, :, 0, :], axis=2
+        )
+
+        vdict = {
+            "weights": all_densities,
+            "coordinates": z_plane_frequencies,
+            "voxel_size": voxel_size,
+            "_is_stacked": True,
         }
         return cls(**vdict, **kwargs)
 
@@ -306,6 +370,55 @@ class VoxelCloud(Voxels):
             "voxel_size": voxel_size,
         }
 
+        return cls(**vdict, **kwargs)
+
+    @classmethod
+    def from_mdtraj(
+        cls: Type["VoxelGrid"],
+        traj,
+        n_voxels_per_side: Tuple[int, int, int],
+        voxel_size: float = 1.0,
+        **kwargs: Any,
+    ) -> "VoxelGrid":
+        """
+        Loads an mdtraj trajectory as a VoxelGrid.
+
+        Parameters
+        ----------
+        traj : mdtraj trajectory
+            The trajectory object to load.
+        n_voxels_per_side : tuple of ints
+            The number of voxels in each dimension.
+        voxel_size : float
+            The size of each voxel.
+
+        Returns
+        -------
+        voxel_grid : VoxelCloud
+            The voxel grid density representation.
+
+        TODO
+        ----
+        This is not implemented yet, due to (to my knowledge)
+        flatten_and_coordinatize not supporting stacked densities.
+        """
+        raise NotImplementedError
+        atom_positions, a_vals, b_vals = get_scattering_info_from_mdtraj(traj)
+        coordinates_3d = make_coordinates(n_voxels_per_side, voxel_size)
+
+        def _build_density(conformation):
+            density = _build_real_space_voxels_from_atoms(
+                conformation, a_vals, b_vals, coordinates_3d
+            )
+
+        all_densities = jax.vmap(_build_density)(atom_positions)
+
+        vdict = {
+            "weights": all_densities,
+            "coordinates": z_plane_frequencies,
+            "voxel_size": voxel_size,
+            "is_stacked": True,
+        }
         return cls(**vdict, **kwargs)
 
 

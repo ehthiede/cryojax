@@ -72,6 +72,7 @@ if __name__ == "__main__":
         packages=PACKAGES,
         package_dir={"": "src"},
         python_requires=">=3.10",
+        include_package_data=True,
         install_requires=INSTALL_REQUIRES,
         extras_require=EXTRA_REQUIRE,
         classifiers=CLASSIFIERS,

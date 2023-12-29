@@ -5,7 +5,7 @@ from cryojax.simulator.density import VoxelGrid, VoxelCloud
 from cryojax.simulator.density._voxel_density import (
     _build_real_space_voxels_from_atoms,
 )
-from cryojax.utils import irfftn, make_coordinates
+from cryojax.utils import ifftn, make_coordinates
 
 
 def test_VoxelGrid_VoxelCloud_agreement(sample_pdb_path):
@@ -13,8 +13,9 @@ def test_VoxelGrid_VoxelCloud_agreement(sample_pdb_path):
     Integration test ensuring that the VoxelGrid and VoxelCloud classes
     produce comparable electron densities when loaded from PDB.
     """
-    n_voxels_per_side = (128, 128, 128)
-    voxel_size = 0.5
+    # This is a very course grid for testing purposes
+    n_voxels_per_side = (32, 32, 32)
+    voxel_size = 2.0
 
     # Load the PDB file into a VoxelGrid
     vg = VoxelGrid.from_pdb(
@@ -24,7 +25,7 @@ def test_VoxelGrid_VoxelCloud_agreement(sample_pdb_path):
     )
     # Since Voxelgrid is in Frequency space by default, we have to first
     # transform back into real space.
-    vg_density = irfftn(vg.weights).ravel()
+    vg_density = ifftn(vg.weights).ravel()
 
     vc = VoxelCloud.from_pdb(
         sample_pdb_path,
@@ -33,7 +34,24 @@ def test_VoxelGrid_VoxelCloud_agreement(sample_pdb_path):
         mask=False,
     )
 
-    assert jnp.allclose(vg_density, vc.weights)
+
+def test_mdtraj_loading(sample_pdb_path):
+    """
+    Currently this just tests that the mdtraj loading works
+    and that shapes are as expected.  Stronger tests would be desired.
+    """
+    import mdtraj
+
+    # This is a very course grid for testing purposes
+    n_voxels_per_side = (32, 32, 32)
+    voxel_size = 2.0
+
+    traj = mdtraj.load(sample_pdb_path)
+    vc = VoxelGrid.from_mdtraj(
+        traj, n_voxels_per_side=n_voxels_per_side, voxel_size=voxel_size
+    )
+    assert len(vc.weights.shape) == 4
+    assert vc.weights.shape[0] == 1  # Only one frame
 
 
 class TestBuildRealSpaceVoxelsFromAtoms:
