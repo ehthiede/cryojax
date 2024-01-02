@@ -25,13 +25,13 @@ def test_VoxelGrid_VoxelCloud_agreement(sample_pdb_path):
     )
     # Since Voxelgrid is in Frequency space by default, we have to first
     # transform back into real space.
-    vg_density = ifftn(vg.weights).ravel()
+    vg_density = ifftn(vg.weights).real.ravel()
 
     vc = VoxelCloud.from_pdb(
         sample_pdb_path,
         n_voxels_per_side=n_voxels_per_side,
         voxel_size=voxel_size,
-        mask=False,
+        mask_zeros=False,
     )
 
 
